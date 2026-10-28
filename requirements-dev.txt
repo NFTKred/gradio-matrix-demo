@@ -1,0 +1,6 @@
+-r requirements.txt
+fastapi==0.162.0
+vercel==0.12.1
+anthropic==2.3.0
+httpx==0.28.1
+pytest==9.2.0

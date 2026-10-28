@@ -1,0 +1,3 @@
+gradio==6.24.0
+python-dotenv==1.2.4
+./vendor/matrix_kred-0.1.0-py3-none-any.whl
