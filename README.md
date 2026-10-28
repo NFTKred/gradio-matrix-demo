@@ -102,7 +102,7 @@ Set all of them on both projects; the planner reads the critic's and host's IDs,
 
 ### Swapping the vendored wheel for the GitHub URL
 
-The wheel is vendored so the Vercel build works today. Once `matrix_kred` is published via GitHub, edit `[tool.uv.sources]` in each agent's `pyproject.toml` (and regenerate its `uv.lock`), and change the wheel line in the root `requirements.txt` for the viewer.
+The wheel is vendored so the Vercel build works today. Once `matrix_kred` is published via GitHub, edit `[tool.uv.sources]` in each agent's `pyproject.toml` (for example `matrix-kred = { git = "https://github.com/<org>/matrixsdk" }`) (and regenerate its `uv.lock`), and change the wheel line in the root `requirements.txt` for the viewer.
 
 ## Heads up: this talks to the real API
 
@@ -118,7 +118,7 @@ Guardrails in place (none is a guarantee beyond the host's balance):
 - One charged call per Start; the button is disabled during a run; a fresh idempotency key per Start.
 - The host's small XP balance is the hard cap; a 402 `insufficient_balance` is shown plainly.
 - `participants` locks the thread to host, planner and critic. Agents ignore threads not opened by the host or outside the demo node, so outsiders on a public node cannot make them spend tokens.
-- The reply cap is counted from Matrix at handling time, never from memory. Reply idempotency key is the webhook delivery ID, and an agent skips if the latest message is already its own, so redelivered notices and queue retries do not pay for a second Claude call.
+- The reply cap is counted from Matrix at handling time, never from memory. Reply idempotency key is the webhook delivery ID, and an agent skips if the latest message is already its own. A failure after Claude has answered (an empty answer, or Matrix rejecting the reply) is logged and not retried. Only a failure while reading the thread, which happens before Claude is called, is retried, up to 3 attempts. Each agent handles one notice at a time.
 - Small token budget per turn, Sonnet rather than Opus.
 
 ## Tests

@@ -102,6 +102,29 @@ def test_start_run_reports_other_matrix_errors():
     assert len(fake.calls) == 1
 
 
+def test_start_run_lost_contact_keeps_shown_replies():
+    class Flaky(SequencedMatrix):
+        def _call(self, name, args, kwargs):
+            if name == "threads.get" and any(n == "threads.conversation" for n, _ in self.calls):
+                if len([1 for n, _ in self.calls if n == "threads.get"]) >= 1:
+                    raise errors.MatrixError("down")
+            return super()._call(name, args, kwargs)
+
+    fake = Flaky([[make_reply(text="first")]])
+    fake.returns["threads.create"] = make_thread()
+    fake.returns["threads.get"] = make_thread()
+    steps = run("Plan a picnic", fake)
+    chat, _, status = steps[-1]
+    assert status.startswith("Lost contact")
+    assert "first" in chat[-1]["content"]
+
+
+def test_to_chat_none_text_is_blank():
+    chat = main.to_chat(make_thread(text=None), [make_reply(text=None)], {})
+    assert chat[0]["content"] == ""
+    assert "None" not in chat[1]["content"]
+
+
 def test_start_run_requires_task():
     fake = FakeMatrix()
     steps = run("  ", fake)
@@ -189,11 +212,13 @@ def test_webhook_status_without_tokens():
 def test_webhook_status_lines(monkeypatch):
     fake = FakeMatrix()
     fake.returns["agent_webhooks.get"] = models.AgentWebhook(
-        enabled=True, last_status=200, failures=0, last_error=None
+        enabled=True, last_status=200, failures=0, last_error=None, last_attempt=1700000000
     )
     monkeypatch.setattr(main, "MatrixClient", lambda token: fake)
     cfg = main.ViewerConfig(**{**CFG.__dict__, "planner_token": "p"})
-    assert main.webhook_status(cfg) == "Planner: enabled=True, last_status=200, failures=0, last_error=None"
+    assert main.webhook_status(cfg) == (
+        "Planner: enabled=True, last_status=200, failures=0, last_error=None, last_attempt=1700000000"
+    )
     fake.raises["agent_webhooks.get"] = errors.MatrixError("nope")
     assert main.webhook_status(cfg) == "Planner: nope"
 

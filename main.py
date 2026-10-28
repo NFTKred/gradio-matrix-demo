@@ -81,10 +81,10 @@ def _label(message, names: Mapping[str, str], fallback_names: bool) -> str:
 
 
 def to_chat(thread, replies, names: Mapping[str, str], fallback_names: bool = True) -> list[dict]:
-    chat = [{"role": "user", "content": thread.text}]
+    chat = [{"role": "user", "content": thread.text or ""}]
     for reply in replies:
         label = _label(reply, names, fallback_names)
-        chat.append({"role": "assistant", "content": f"**{label}:** {reply.text}"})
+        chat.append({"role": "assistant", "content": f"**{label}:** {reply.text or ''}"})
     return chat
 
 
@@ -139,12 +139,13 @@ def start_run(
     names = names_for(cfg)
     started = clock()
     count = -1
+    chat = to_chat(thread, [], names)
     while True:
         try:
             current = host.threads.get(thread.id)
             replies = list(host.threads.conversation(thread.id))
         except MatrixError as e:
-            yield to_chat(thread, [], names), _log_json(log), f"Lost contact with Matrix: {e}"
+            yield chat, _log_json(log), f"Lost contact with Matrix: {e}"
             return
         if len(replies) != count:
             count = len(replies)
@@ -188,7 +189,7 @@ def webhook_status(cfg: ViewerConfig) -> str:
             hook = MatrixClient(token).agent_webhooks.get(agent_id)
             lines.append(
                 f"{name}: enabled={hook.enabled}, last_status={hook.last_status}, "
-                f"failures={hook.failures}, last_error={hook.last_error}"
+                f"failures={hook.failures}, last_error={hook.last_error}, last_attempt={hook.last_attempt}"
             )
         except MatrixError as e:
             lines.append(f"{name}: {e}")
@@ -232,7 +233,7 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
 
     def show_cat(thread_id: str | None):
         if not thread_id:
-            return [], "[]"
+            return gr.skip(), gr.skip()
         log: list[dict] = []
         try:
             return cat_conversation(host(), thread_id, log), _log_json(log)
