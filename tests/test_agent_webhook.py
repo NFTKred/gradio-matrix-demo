@@ -99,3 +99,14 @@ def test_process_payload_runs_turn(monkeypatch):
     monkeypatch.setattr(planner.worker, "ask_claude", lambda client, system, text: "ok")
     outcome = planner.worker.process_payload(message_event())
     assert outcome.startswith("replied")
+
+
+def test_two_agents_load_in_one_process(tmp_path):
+    from conftest import ROOT, load_agent_folder
+    import shutil
+
+    copy = tmp_path / "critic"
+    shutil.copytree(ROOT / "agents" / "planner", copy, ignore=shutil.ignore_patterns("vendor", "__pycache__"))
+    second = load_agent_folder(copy)
+    assert second.worker is not planner.worker
+    assert second.app.app is not planner.app.app

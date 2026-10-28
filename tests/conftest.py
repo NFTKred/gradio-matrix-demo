@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from matrix_kred import models
+from vercel.queue.testing import clear_subscriptions
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT_MODULES = ("core", "role", "worker", "app")
@@ -17,9 +18,15 @@ AGENT_MODULES = ("core", "role", "worker", "app")
 def load_agent(role: str) -> SimpleNamespace:
     """Load agents/<role>/*.py under their plain names, isolated from other agents.
 
-    Cached: worker.py registers a global queue subscriber, so it may be loaded only once.
+    Cached so each role is loaded once per process.
     """
-    folder = ROOT / "agents" / role
+    return load_agent_folder(ROOT / "agents" / role)
+
+
+def load_agent_folder(folder: Path) -> SimpleNamespace:
+    # Every agent's worker is module "worker" with the same handler and topic, so
+    # vercel would see a duplicate subscription; drop earlier registrations first.
+    clear_subscriptions()
     for name in AGENT_MODULES:
         sys.modules.pop(name, None)
     sys.path.insert(0, str(folder))
