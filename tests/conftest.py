@@ -1,16 +1,24 @@
+import functools
+import hashlib
+import hmac
 import importlib.util
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 from matrix_kred import models
 
 ROOT = Path(__file__).resolve().parent.parent
-AGENT_MODULES = ("core", "role", "app", "worker")
+AGENT_MODULES = ("core", "role", "worker", "app")
 
 
+@functools.cache
 def load_agent(role: str) -> SimpleNamespace:
-    """Load agents/<role>/*.py under their plain names, isolated from other agents."""
+    """Load agents/<role>/*.py under their plain names, isolated from other agents.
+
+    Cached: worker.py registers a global queue subscriber, so it may be loaded only once.
+    """
     folder = ROOT / "agents" / role
     for name in AGENT_MODULES:
         sys.modules.pop(name, None)
@@ -93,3 +101,15 @@ class FakeMatrix:
         if name == "threads.conversation":
             return iter(result or [])
         return result
+
+
+def sign(body: bytes, secret: str, t: int | None = None) -> dict[str, str]:
+    """Headers Matrix sends with a webhook delivery, signed with `secret`."""
+    t = int(time.time()) if t is None else t
+    digest = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    return {
+        "X-Matrix-Signature": f"t={t},v1={digest}",
+        "X-Matrix-Event": "message.created",
+        "X-Matrix-Delivery": "dlv_1",
+        "Content-Type": "application/json",
+    }
