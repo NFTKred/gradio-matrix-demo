@@ -1,10 +1,13 @@
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from matrix_kred import models
+import anthropic
+from matrix_kred import MatrixClient, NotFoundError, PermissionDeniedError, models
 
 import role
+
+MODEL = "claude-sonnet-5-5"
 
 
 @dataclass(frozen=True)
@@ -69,3 +72,48 @@ def transcript(
     blocks = [f"Task: {thread.text}"]
     blocks += [f"{name_of(r.user)}: {r.text}" for r in replies]
     return "\n\n".join(blocks)
+
+
+def ask_claude(client: anthropic.Anthropic, system: str, text: str) -> str | None:
+    response = client.beta.messages.create(
+        model=MODEL,
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        output_config={"effort": "low"},
+        max_tokens=4000,
+        system=system,
+        messages=[{"role": "user", "content": text}],
+    )
+    if response.stop_reason == "refusal":
+        details = getattr(response, "stop_details", None)
+        print(f"claude refused: category={getattr(details, 'category', None)}")
+        return None
+    return "".join(b.text for b in response.content if b.type == "text")
+
+
+def take_turn(
+    matrix: MatrixClient,
+    ask: Callable[[str, str], str | None],
+    cfg: AgentConfig,
+    thread_id: str,
+    delivery_id: str,
+    names: Mapping[str, str],
+) -> str:
+    thread = matrix.threads.get(thread_id)
+    replies = list(matrix.threads.conversation(thread_id))
+    reason = skip_reason(thread, replies, cfg)
+    if reason:
+        return f"skipped: {reason}"
+    text = ask(role.SYSTEM_PROMPT, transcript(thread, replies, names))
+    if text is None:
+        return "refused"
+    try:
+        reply = matrix.threads.reply(thread_id, text=text, idempotency_key=delivery_id)
+    except (PermissionDeniedError, NotFoundError) as exc:
+        return f"failed: {exc.code}"
+    return f"replied {reply.id}"
+
+
+def agent_names(cfg_env: Mapping[str, str]) -> dict[str, str]:
+    labels = {"MATRIX_HOST_ID": "Host", "MATRIX_PLANNER_ID": "Planner", "MATRIX_CRITIC_ID": "Critic"}
+    return {cfg_env[key]: label for key, label in labels.items() if cfg_env.get(key)}

@@ -1,4 +1,8 @@
-from conftest import load_agent, make_reply, make_thread
+from types import SimpleNamespace
+
+import matrix_kred
+
+from conftest import FakeMatrix, load_agent, make_reply, make_thread
 
 planner = load_agent("planner")
 core = planner.core
@@ -74,3 +78,85 @@ def test_load_config_reads_env():
     assert cfg.demo_node_id == "node_d" and cfg.reply_cap == 6
     del env["REPLY_CAP"]
     assert core.load_config(env).reply_cap == 4
+
+
+def _fake_matrix(thread, replies=()):
+    fake = FakeMatrix()
+    fake.returns["threads.get"] = thread
+    fake.returns["threads.conversation"] = list(replies)
+    fake.returns["threads.reply"] = make_reply(id="rply_new")
+    return fake
+
+
+def _replies_sent(fake):
+    return [kw for name, kw in fake.calls if name == "threads.reply"]
+
+
+def test_take_turn_replies_with_delivery_key():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    seen = []
+
+    def ask(system, text):
+        seen.append((system, text))
+        return "A plan"
+
+    result = core.take_turn(fake, ask, CFG, "thr_1", "dlv_1", {"agt_h": "Host"})
+    assert result == "replied rply_new"
+    (sent,) = _replies_sent(fake)
+    assert sent["id"] == "thr_1"
+    assert sent["text"] == "A plan" and sent["idempotency_key"] == "dlv_1"
+    assert seen[0][0] == planner.role.SYSTEM_PROMPT
+    assert "Plan a picnic" in seen[0][1]
+
+
+def test_take_turn_skips_without_calling_claude():
+    fake = _fake_matrix(make_thread(user="agt_x"))
+    calls = []
+    result = core.take_turn(fake, lambda s, t: calls.append(t), CFG, "thr_1", "dlv_1", {})
+    assert result == "skipped: not a host thread"
+    assert calls == [] and _replies_sent(fake) == []
+
+
+def test_take_turn_refusal_posts_nothing():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    assert core.take_turn(fake, lambda s, t: None, CFG, "thr_1", "dlv_1", {}) == "refused"
+    assert _replies_sent(fake) == []
+
+
+def test_take_turn_reply_forbidden():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    fake.raises["threads.reply"] = matrix_kred.PermissionDeniedError(
+        status=403, type="permission_denied", code="forbidden", message="no"
+    )
+    result = core.take_turn(fake, lambda s, t: "A plan", CFG, "thr_1", "dlv_1", {})
+    assert result == "failed: forbidden"
+
+
+def test_ask_claude_refusal_returns_none():
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(stop_reason="refusal", content=[], stop_details=None)
+
+    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
+    assert core.ask_claude(client, "sys", "hello") is None
+    assert captured["model"] == "claude-sonnet-5-5"
+    assert captured["fallbacks"] == "default"
+    assert captured["betas"] == ["server-side-fallback-2026-07-01"]
+    assert captured["max_tokens"] == 4000
+    assert captured["system"] == "sys"
+    assert captured["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_ask_claude_joins_text_blocks():
+    blocks = [SimpleNamespace(type="text", text="a"), SimpleNamespace(type="thinking"),
+              SimpleNamespace(type="text", text="b")]
+    create = lambda **kw: SimpleNamespace(stop_reason="end_turn", content=blocks)
+    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
+    assert core.ask_claude(client, "s", "t") == "ab"
+
+
+def test_agent_names_maps_set_ids_only():
+    env = {"MATRIX_HOST_ID": "agt_h", "MATRIX_CRITIC_ID": "agt_c"}
+    assert core.agent_names(env) == {"agt_h": "Host", "agt_c": "Critic"}
