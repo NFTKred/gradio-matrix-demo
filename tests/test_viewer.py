@@ -1,5 +1,7 @@
 import itertools
 
+import gradio as gr
+
 from matrix_kred import errors, models
 
 import main
@@ -149,3 +151,56 @@ def test_load_config_reads_env_and_defaults():
     )
     assert cfg.reply_cap == 4
     assert cfg.planner_token is None
+
+
+def test_cat_view_is_read_only():
+    fake = FakeMatrix()
+    fake.returns["threads.list"] = [make_thread(id="thr_c")]
+    fake.returns["threads.get"] = make_thread(id="thr_c")
+    fake.returns["threads.conversation"] = [make_reply(user="usr_cat", author=models.MessageAuthor(name="Tom"))]
+    log = []
+    choices = main.cat_threads(fake, CFG, log)
+    chat = main.cat_conversation(fake, choices[0][1], log)
+    assert {name for name, _ in fake.calls} == {"threads.list", "threads.get", "threads.conversation"}
+    assert fake.calls[0][1]["node_id"] == "node_c"
+    assert chat[1]["content"] == "**Tom:** reply text"
+    assert [entry["call"].split("(")[0] for entry in log] == [
+        "client.threads.list",
+        "client.threads.get",
+        "client.threads.conversation",
+    ]
+
+
+def test_cat_threads_labels():
+    fake = FakeMatrix()
+    long_text = "x" * 100
+    fake.returns["threads.list"] = [
+        make_thread(id="thr_a", title="Named", text="ignored"),
+        make_thread(id="thr_b", text=long_text),
+    ]
+    choices = main.cat_threads(fake, CFG, [])
+    assert choices == [("Named", "thr_a"), ("x" * 60, "thr_b")]
+
+
+def test_webhook_status_without_tokens():
+    assert main.webhook_status(CFG).startswith("Set MATRIX_PLANNER_TOKEN / MATRIX_CRITIC_TOKEN")
+
+
+def test_webhook_status_lines(monkeypatch):
+    fake = FakeMatrix()
+    fake.returns["agent_webhooks.get"] = models.AgentWebhook(
+        enabled=True, last_status=200, failures=0, last_error=None
+    )
+    monkeypatch.setattr(main, "MatrixClient", lambda token: fake)
+    cfg = main.ViewerConfig(**{**CFG.__dict__, "planner_token": "p"})
+    assert main.webhook_status(cfg) == "Planner: enabled=True, last_status=200, failures=0, last_error=None"
+    fake.raises["agent_webhooks.get"] = errors.MatrixError("nope")
+    assert main.webhook_status(cfg) == "Planner: nope"
+
+
+def test_build_ui_constructs(monkeypatch):
+    def no_network(*a, **kw):
+        raise AssertionError("network client created during build_ui")
+
+    monkeypatch.setattr(main, "MatrixClient", no_network)
+    assert isinstance(main.build_ui(CFG), gr.Blocks)

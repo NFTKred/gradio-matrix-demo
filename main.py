@@ -9,6 +9,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Iterator, Mapping
 
+import gradio as gr
+from dotenv import load_dotenv
 from matrix_kred import MatrixClient
 from matrix_kred.errors import MatrixError, PaymentRequiredError
 
@@ -160,3 +162,136 @@ def start_run(
             return
         yield chat, _log_json(log), f"Waiting for the agents... {count} of {cfg.reply_cap} replies."
         sleep(POLL_SECONDS)
+
+
+def cat_threads(client: MatrixClient, cfg: ViewerConfig, log: list[dict]) -> list[tuple[str, str]]:
+    threads = list(client.threads.list(cfg.cat_node_id, limit=20))
+    log_call(log, f"client.threads.list({cfg.cat_node_id!r}, limit=20)", threads)
+    return [(t.title or (t.text or "")[:60], t.id) for t in threads]
+
+
+def cat_conversation(client: MatrixClient, thread_id: str, log: list[dict]) -> list[dict]:
+    thread = client.threads.get(thread_id)
+    log_call(log, f"client.threads.get({thread_id!r})", thread)
+    replies = list(client.threads.conversation(thread_id))
+    log_call(log, f"client.threads.conversation({thread_id!r})", replies)
+    return to_chat(thread, replies, {})
+
+
+def webhook_status(cfg: ViewerConfig) -> str:
+    agents = [("Planner", cfg.planner_id, cfg.planner_token), ("Critic", cfg.critic_id, cfg.critic_token)]
+    lines = []
+    for name, agent_id, token in agents:
+        if not token:
+            continue
+        try:
+            hook = MatrixClient(token).agent_webhooks.get(agent_id)
+            lines.append(
+                f"{name}: enabled={hook.enabled}, last_status={hook.last_status}, "
+                f"failures={hook.failures}, last_error={hook.last_error}"
+            )
+        except MatrixError as e:
+            lines.append(f"{name}: {e}")
+    if not lines:
+        return "Set MATRIX_PLANNER_TOKEN / MATRIX_CRITIC_TOKEN to see webhook delivery status."
+    return "\n\n".join(lines)
+
+
+EXAMPLE_TASKS = [
+    "Plan a weekend trip to Lisbon for two on a modest budget.",
+    "Draft a launch plan for a small neighbourhood bakery's first week.",
+    "Outline a study schedule for learning Spanish in three months.",
+]
+
+
+def build_ui(cfg: ViewerConfig) -> gr.Blocks:
+    host_client: list[MatrixClient] = []
+
+    def host() -> MatrixClient:
+        # Created on first use so building the UI makes no network calls.
+        if not host_client:
+            host_client.append(MatrixClient(cfg.host_token))
+        return host_client[0]
+
+    def show_balance() -> str:
+        try:
+            return f"Host balance: {host_balance(host(), [])}"
+        except MatrixError as e:
+            return f"Host balance unavailable: {e}"
+
+    def run_task(task: str):
+        yield from start_run(task, cfg, host())
+
+    def refresh_cat():
+        log: list[dict] = []
+        try:
+            choices = cat_threads(host(), cfg, log)
+        except MatrixError as e:
+            return gr.update(choices=[], value=None), f"Couldn't list threads: {e}", _log_json(log)
+        return gr.update(choices=choices, value=None), f"{len(choices)} recent threads.", _log_json(log)
+
+    def show_cat(thread_id: str | None):
+        if not thread_id:
+            return [], "[]"
+        log: list[dict] = []
+        try:
+            return cat_conversation(host(), thread_id, log), _log_json(log)
+        except MatrixError as e:
+            return [], _log_json(log + [{"call": "error", "result": str(e)}])
+
+    with gr.Blocks(title="Matrix Agents Demo") as demo:
+        with gr.Tab("Agents talking"):
+            gr.Markdown(
+                "# Matrix agents demo\n"
+                "Two Claude agents, a planner and a critic, run on Vercel and talk to each other "
+                "through Matrix. Matrix is the wire: this page only reads the thread back. The agents' "
+                "own SDK calls happen on Vercel, so see their logs there. The panel on the right shows "
+                "the calls this viewer makes.\n\n"
+                "**Start spends one thread charge from the host account.**"
+            )
+            balance = gr.Markdown("Host balance: loading...")
+            refresh_balance = gr.Button("Refresh balance", size="sm")
+            with gr.Row():
+                with gr.Column(scale=2):
+                    task = gr.Textbox(label="Task for the agents", placeholder=EXAMPLE_TASKS[0])
+                    gr.Examples(examples=EXAMPLE_TASKS, inputs=task)
+                    start = gr.Button("Start", variant="primary")
+                    chatbot = gr.Chatbot(height=500)
+                    status = gr.Markdown("")
+                with gr.Column(scale=1):
+                    gr.Markdown("### SDK calls (this viewer)")
+                    call_log = gr.Code(language="json")
+                    gr.Markdown("### Agent webhook status")
+                    hooks = gr.Markdown(webhook_status(cfg))
+                    refresh_hooks = gr.Button("Refresh webhook status", size="sm")
+
+            start.click(lambda: gr.update(interactive=False), None, start).then(
+                run_task, task, [chatbot, call_log, status]
+            ).then(lambda: gr.update(interactive=True), None, start)
+            refresh_hooks.click(lambda: webhook_status(cfg), None, hooks)
+            refresh_balance.click(show_balance, None, balance)
+            demo.load(show_balance, None, balance)
+
+        with gr.Tab("Cat Matrix (read-only)"):
+            gr.Markdown(
+                "Another team's cat-roleplaying agents at catmatrix.kred. This tab only reads "
+                "(`threads.list`, `threads.get`, `threads.conversation`)."
+            )
+            refresh_cats = gr.Button("Refresh threads")
+            cat_status = gr.Markdown("")
+            with gr.Row():
+                with gr.Column(scale=2):
+                    cat_picker = gr.Dropdown(label="Thread", choices=[])
+                    cat_chat = gr.Chatbot(height=500)
+                with gr.Column(scale=1):
+                    gr.Markdown("### SDK calls (this viewer)")
+                    cat_log = gr.Code(language="json")
+            refresh_cats.click(refresh_cat, None, [cat_picker, cat_status, cat_log])
+            cat_picker.change(show_cat, cat_picker, [cat_chat, cat_log])
+
+    return demo
+
+
+if __name__ == "__main__":
+    load_dotenv()
+    build_ui(load_config()).launch()
