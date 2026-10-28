@@ -51,7 +51,7 @@ def load_agent_folder(folder: Path) -> SimpleNamespace:
 
 def make_thread(**kw) -> models.ThreadResource:
     kw.setdefault("id", "thr_1")
-    kw.setdefault("node", "node_d")
+    kw.setdefault("node", None)  # a direct GET returns node=null
     kw.setdefault("user", "usr_h")
     kw.setdefault("text", "Plan a picnic")
     return models.ThreadResource(**kw)

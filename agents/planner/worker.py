@@ -27,6 +27,6 @@ def process_payload(payload: dict[str, Any]) -> str:
     return outcome
 
 
-@subscribe(topic=NOTICES, max_attempts=3, retry_after=60)
+@subscribe(topic=NOTICES, max_attempts=3, retry_after=60, max_concurrency=1)
 async def handle_notice(message: Message[dict[str, Any]]) -> None:
     await asyncio.to_thread(process_payload, message.payload)

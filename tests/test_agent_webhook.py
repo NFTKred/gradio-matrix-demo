@@ -98,7 +98,9 @@ def test_process_payload_runs_turn(monkeypatch):
     monkeypatch.setattr(planner.worker.anthropic, "Anthropic", lambda: object())
     monkeypatch.setattr(planner.worker, "ask_claude", lambda client, system, text: "ok")
     outcome = planner.worker.process_payload(message_event())
-    assert outcome.startswith("replied")
+    assert outcome == "replied rply_9"
+    (sent,) = [kw for name, kw in matrix.calls if name == "threads.reply"]
+    assert sent["idempotency_key"] == "dlv_1"
 
 
 def test_two_agents_load_in_one_process(tmp_path):

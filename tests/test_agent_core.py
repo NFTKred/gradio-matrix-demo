@@ -31,6 +31,10 @@ def test_ignores_other_node():
     assert core.skip_reason(make_thread(node="node_x"), [], CFG) == "other node"
 
 
+def test_responds_when_thread_node_is_null():
+    assert core.skip_reason(make_thread(node=None), [], CFG) is None
+
+
 def test_ignores_non_host_thread():
     assert core.skip_reason(make_thread(user="agt_x"), [], CFG) == "not a host thread"
 
@@ -130,6 +134,44 @@ def test_take_turn_reply_forbidden():
     )
     result = core.take_turn(fake, lambda s, t: "A plan", CFG, "thr_1", "dlv_1", {})
     assert result == "failed: forbidden"
+
+
+def test_take_turn_empty_text_posts_nothing():
+    for empty in ("", "  \n"):
+        fake = _fake_matrix(make_thread(user="agt_h"))
+        assert core.take_turn(fake, lambda s, t: empty, CFG, "thr_1", "dlv_1", {}) == "empty"
+        assert _replies_sent(fake) == []
+
+
+def test_take_turn_reply_validation_error_does_not_raise():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    fake.raises["threads.reply"] = matrix_kred.ValidationError(
+        status=422, type="validation_error", code="invalid_text", message="bad"
+    )
+    result = core.take_turn(fake, lambda s, t: "A plan", CFG, "thr_1", "dlv_1", {})
+    assert result == "failed: invalid_text"
+
+
+def test_take_turn_reply_server_error_does_not_raise():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    fake.raises["threads.reply"] = matrix_kred.ServerError(
+        status=503, type="server_error", code="unavailable", message="down"
+    )
+    assert core.take_turn(fake, lambda s, t: "A plan", CFG, "thr_1", "dlv_1", {}) == "failed: unavailable"
+
+
+def test_take_turn_reply_not_found_does_not_raise():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    fake.raises["threads.reply"] = matrix_kred.NotFoundError(
+        status=404, type="not_found", code="not_found", message="gone"
+    )
+    assert core.take_turn(fake, lambda s, t: "A plan", CFG, "thr_1", "dlv_1", {}) == "failed: not_found"
+
+
+def test_take_turn_reply_connection_error_does_not_raise():
+    fake = _fake_matrix(make_thread(user="agt_h"))
+    fake.raises["threads.reply"] = matrix_kred.APIConnectionError("boom")
+    assert core.take_turn(fake, lambda s, t: "A plan", CFG, "thr_1", "dlv_1", {}) == "failed: boom"
 
 
 def test_ask_claude_refusal_returns_none():

@@ -13,4 +13,4 @@ dependencies = [
 matrix-kred = { path = "vendor/matrix_kred-0.1.0-py3-none-any.whl" }
 
 [[tool.vercel.subscribers]]
-entrypoint = "worker"
+entrypoint = "worker:handle_notice"

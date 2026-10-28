@@ -3,7 +3,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 import anthropic
-from matrix_kred import MatrixClient, NotFoundError, PermissionDeniedError, models
+from matrix_kred import MatrixClient, MatrixError, models
 
 import role
 
@@ -46,7 +46,8 @@ def _matches(author: str | None, ids) -> bool:
 def skip_reason(
     thread: models.ThreadResource, replies: list[models.ReplyResource], cfg: AgentConfig
 ) -> str | None:
-    if thread.node != cfg.demo_node_id:
+    # A direct GET returns node=null; the node is checked against the signed event in app.py.
+    if thread.node is not None and thread.node != cfg.demo_node_id:
         return "other node"
     if not same_id(thread.user, cfg.host_id):
         return "not a host thread"
@@ -107,10 +108,13 @@ def take_turn(
     text = ask(role.SYSTEM_PROMPT, transcript(thread, replies, names))
     if text is None:
         return "refused"
+    if not text.strip():
+        return "empty"
+    # From here on Claude has been paid for: never raise, or the queue retries and pays again.
     try:
         reply = matrix.threads.reply(thread_id, text=text, idempotency_key=delivery_id)
-    except (PermissionDeniedError, NotFoundError) as exc:
-        return f"failed: {exc.code}"
+    except MatrixError as exc:
+        return f"failed: {getattr(exc, 'code', None) or exc}"
     return f"replied {reply.id}"
 
 
