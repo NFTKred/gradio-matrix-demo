@@ -204,3 +204,12 @@ def test_build_ui_constructs(monkeypatch):
 
     monkeypatch.setattr(main, "MatrixClient", no_network)
     assert isinstance(main.build_ui(CFG), gr.Blocks)
+
+
+def test_build_ui_makes_no_calls_with_tokens_configured(monkeypatch):
+    def no_network(*a, **kw):
+        raise AssertionError("network client created during build_ui")
+
+    monkeypatch.setattr(main, "MatrixClient", no_network)
+    cfg = main.ViewerConfig(**{**CFG.__dict__, "planner_token": "p", "critic_token": "c"})
+    assert isinstance(main.build_ui(cfg), gr.Blocks)

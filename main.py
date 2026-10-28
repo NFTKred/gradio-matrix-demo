@@ -262,7 +262,7 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
                     gr.Markdown("### SDK calls (this viewer)")
                     call_log = gr.Code(language="json")
                     gr.Markdown("### Agent webhook status")
-                    hooks = gr.Markdown(webhook_status(cfg))
+                    hooks = gr.Markdown("Webhook status: loading...")
                     refresh_hooks = gr.Button("Refresh webhook status", size="sm")
 
             start.click(lambda: gr.update(interactive=False), None, start).then(
@@ -271,6 +271,7 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
             refresh_hooks.click(lambda: webhook_status(cfg), None, hooks)
             refresh_balance.click(show_balance, None, balance)
             demo.load(show_balance, None, balance)
+            demo.load(lambda: webhook_status(cfg), None, hooks)
 
         with gr.Tab("Cat Matrix (read-only)"):
             gr.Markdown(
