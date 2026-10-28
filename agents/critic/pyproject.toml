@@ -1,0 +1,16 @@
+[project]
+name = "matrix-agent-critic"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.162.0",
+    "vercel==0.12.1",
+    "anthropic==2.3.0",
+    "matrix-kred",
+]
+
+[tool.uv.sources]
+matrix-kred = { path = "vendor/matrix_kred-0.1.0-py3-none-any.whl" }
+
+[[tool.vercel.subscribers]]
+entrypoint = "worker"
