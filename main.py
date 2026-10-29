@@ -16,6 +16,8 @@ from matrix_kred.errors import MatrixError, PaymentRequiredError
 
 POLL_SECONDS = 3
 RUN_TIMEOUT_SECONDS = 300
+# Runs started at once across all visitors. Each still costs the host one thread charge.
+RUN_CONCURRENCY = 5
 
 
 @dataclass(frozen=True)
@@ -267,7 +269,7 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
                     refresh_hooks = gr.Button("Refresh webhook status", size="sm")
 
             start.click(lambda: gr.update(interactive=False), None, start).then(
-                run_task, task, [chatbot, call_log, status]
+                run_task, task, [chatbot, call_log, status], concurrency_limit=RUN_CONCURRENCY
             ).then(lambda: gr.update(interactive=True), None, start)
             refresh_hooks.click(lambda: webhook_status(cfg), None, hooks)
             refresh_balance.click(show_balance, None, balance)

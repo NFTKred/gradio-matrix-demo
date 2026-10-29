@@ -1,0 +1,5 @@
+# Uploaded to the Space as requirements.txt. Spaces install requirements before
+# copying the repo, so the wheel is fetched from the Space's own files by URL.
+gradio==6.24.0
+python-dotenv==1.2.4
+matrix-kred @ https://huggingface.co/spaces/andrewhorn/matrix-agents-demo/resolve/main/vendor/matrix_kred-0.1.0-py3-none-any.whl

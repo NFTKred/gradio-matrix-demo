@@ -1,3 +1,16 @@
+---
+title: Matrix Agents Demo
+emoji: 🐾
+colorFrom: indigo
+colorTo: pink
+sdk: gradio
+sdk_version: 6.24.0
+python_version: "3.12"
+app_file: main.py
+pinned: false
+short_description: Two Claude agents talking through the Matrix API
+---
+
 # Matrix Agents Demo
 
 A deliberately simple demo of the **Matrix API** (`https://api.matrix.kred`, docs at `/redoc`) and its Python SDK `matrix_kred`, showing that **Matrix can be the communication layer between agents**: agents hosted separately, built separately, talking through Matrix rather than through each other.
@@ -104,6 +117,22 @@ Set all of them on both projects; the planner reads the critic's and host's IDs,
 
 The wheel is vendored so the Vercel build works today. Once `matrix_kred` is published via GitHub, edit `[tool.uv.sources]` in each agent's `pyproject.toml` (for example `matrix-kred = { git = "https://github.com/<org>/matrixsdk" }`) (and regenerate its `uv.lock`), and change the wheel line in the root `requirements.txt` for the viewer.
 
+## Hosted viewer (Hugging Face Space)
+
+The viewer also runs as a public Space, so people can try it without installing anything. Only `main.py`, `vendor/`, this README and `space/requirements.txt` (uploaded as `requirements.txt`) go to the Space. The Space installs `matrix_kred` from the wheel in its own repo by URL, because Spaces install requirements before the rest of the repo is copied in.
+
+```bash
+hf repo create <you>/matrix-agents-demo --repo-type space --space-sdk gradio
+hf upload <you>/matrix-agents-demo main.py main.py --repo-type space
+hf upload <you>/matrix-agents-demo vendor vendor --repo-type space
+hf upload <you>/matrix-agents-demo README.md README.md --repo-type space
+hf upload <you>/matrix-agents-demo space/requirements.txt requirements.txt --repo-type space
+```
+
+Then, in the Space's settings, add `MATRIX_HOST_TOKEN` as a **secret** and the IDs (`MATRIX_HOST_ID`, `MATRIX_PLANNER_ID`, `MATRIX_CRITIC_ID`, `MATRIX_DEMO_NODE_ID`, `MATRIX_CAT_NODE_ID`) and `REPLY_CAP` as variables. Leave the planner and critic tokens out of a public Space; the webhook status panel then says it isn't configured.
+
+Anyone with the URL can press Start. The budget is the host's XP: set the demo node's `thread` and `thread_participants` costs to 1 (`PATCH /matrix/nodes/{node_id}/governance`), and each run costs 1 XP, so the host's balance is the number of runs left. Each run also costs up to `REPLY_CAP` Claude turns on the agents' Anthropic key, so set a spending limit on that key too. Up to 5 runs go at once (`RUN_CONCURRENCY` in `main.py`).
+
 ## Heads up: this talks to the real API
 
 These are live endpoints, not a sandbox. Real XP and real Claude tokens are spent.
@@ -138,6 +167,7 @@ Tests use stubbed SDKs; no live calls.
 | `requirements.txt` | Viewer deps (Gradio 6, python-dotenv, vendored `matrix_kred` wheel) |
 | `requirements-dev.txt` | Adds the agent deps and pytest for running tests |
 | `vendor/` | The `matrix_kred` wheel for the viewer |
+| `space/requirements.txt` | Viewer deps for the Hugging Face Space (wheel by URL) |
 | `agents/planner/` | Vercel project: planner agent |
 | `agents/critic/` | Vercel project: critic agent (same shape as the planner) |
 | `agents/*/app.py` | FastAPI app: verifies the webhook, enqueues the event |
