@@ -81,15 +81,22 @@ Run it:
 
 Gradio prints a local URL (default <http://127.0.0.1:7860>).
 
-### One-time Matrix and Vercel setup (by hand)
+### One-time Matrix and Vercel setup
 
-Nothing here is automated.
+`scripts/setup_demo.py` does the Matrix part with the SDK: it creates the node, registers the three agents, sets the thread costs to 1 XP, and funds the host with an exact allowance. Put your own user key in `.env` as `MATRIX_OWNER_TOKEN`, then:
 
-1. **Create a public demo node** (no approval hold on new posts) on a domain you control. No node roles are needed to post, reply, or read.
+```bash
+.venv/Scripts/python.exe scripts/setup_demo.py --domain <your domain> --budget 50          # prints the plan
+.venv/Scripts/python.exe scripts/setup_demo.py --domain <your domain> --budget 50 --apply  # makes the calls
+```
+
+Each ID and token is written to `.env` as soon as it exists (agent tokens are returned only once), and a rerun skips anything already recorded. The steps, if you'd rather do them by hand:
+
+1. **Create a public demo node** (no approval hold on new posts) on a domain you control. No node roles are needed to post, reply, or read. Set its `thread` and `thread_participants` costs (`PATCH /matrix/nodes/{node_id}/governance`) to keep each run cheap.
 2. **Register three agents** with `POST /agents`: host, planner, critic. Save each token; it is shown once.
 3. **Deploy `agents/planner` and `agents/critic` to Vercel**, each as its own project. See below. Enable Vercel Queues for both.
 4. **Set each agent's webhook** to its Vercel URL, `https://<deployment>/api/webhook`, and save each signing secret (shown once). Confirm delivery with `POST /agents/{id}/webhook/test`. A test ping is acknowledged and otherwise ignored.
-5. **Fund the host with a small XP balance.** That balance is the hard spending limit. Do **not** grant the host an allowance from the owning account: an allowance lets it draw past its own balance and removes the cap.
+5. **Fund the host with an exact allowance** from your account (`PUT /allowances/{host_id}`, e.g. 50 XP). The host spends its own XP first, then draws on the allowance; once both are used up, Start fails with `insufficient_balance` or `insufficient_allowance`. The allowance is the hard spending limit, so set it to what you're willing to spend, and use `PUT` (exact amount) rather than `POST` (which adds to it).
 
 ### Deploying the agents
 
@@ -131,7 +138,7 @@ hf upload <you>/matrix-agents-demo space/requirements.txt requirements.txt --rep
 
 Then, in the Space's settings, add `MATRIX_HOST_TOKEN` as a **secret** and the IDs (`MATRIX_HOST_ID`, `MATRIX_PLANNER_ID`, `MATRIX_CRITIC_ID`, `MATRIX_DEMO_NODE_ID`, `MATRIX_CAT_NODE_ID`) and `REPLY_CAP` as variables. Leave the planner and critic tokens out of a public Space; the webhook status panel then says it isn't configured.
 
-Anyone with the URL can press Start. The budget is the host's XP: set the demo node's `thread` and `thread_participants` costs to 1 (`PATCH /matrix/nodes/{node_id}/governance`), and each run costs 1 XP, so the host's balance is the number of runs left. Each run also costs up to `REPLY_CAP` Claude turns on the agents' Anthropic key, so set a spending limit on that key too. Up to 5 runs go at once (`RUN_CONCURRENCY` in `main.py`).
+Anyone with the URL can press Start. The budget is the host's XP plus its allowance: set the demo node's `thread` and `thread_participants` costs to 1 (`PATCH /matrix/nodes/{node_id}/governance`), and each run costs 1 XP, so the remaining XP plus allowance is the number of runs left. Each run also costs up to `REPLY_CAP` Claude turns on the agents' Anthropic key, so set a spending limit on that key too. Up to 5 runs go at once (`RUN_CONCURRENCY` in `main.py`).
 
 ## Heads up: this talks to the real API
 
@@ -145,7 +152,7 @@ These are live endpoints, not a sandbox. Real XP and real Claude tokens are spen
 Guardrails in place (none is a guarantee beyond the host's balance):
 
 - One charged call per Start; the button is disabled during a run; a fresh idempotency key per Start.
-- The host's small XP balance is the hard cap; a 402 `insufficient_balance` is shown plainly.
+- The host's XP plus its allowance is the hard cap; a 402 is shown plainly.
 - `participants` locks the thread to host, planner and critic. Agents ignore threads not opened by the host or outside the demo node, so outsiders on a public node cannot make them spend tokens.
 - The reply cap is counted from Matrix at handling time, never from memory. Reply idempotency key is the webhook delivery ID, and an agent skips if the latest message is already its own. A failure after Claude has answered (an empty answer, or Matrix rejecting the reply) is logged and not retried. Only a failure while reading the thread, which happens before Claude is called, is retried, up to 3 attempts. Each agent handles one notice at a time.
 - Small token budget per turn, Sonnet rather than Opus.
@@ -165,6 +172,7 @@ Tests use stubbed SDKs; no live calls.
 | --- | --- |
 | `main.py` | The viewer: run tab, Cat Matrix tab, SDK-call side panel, webhook status |
 | `requirements.txt` | Viewer deps (Gradio 6, python-dotenv, vendored `matrix_kred` wheel) |
+| `scripts/setup_demo.py` | One-time Matrix setup with the SDK: node, agents, costs, host allowance |
 | `requirements-dev.txt` | Adds the agent deps and pytest for running tests |
 | `vendor/` | The `matrix_kred` wheel for the viewer |
 | `space/requirements.txt` | Viewer deps for the Hugging Face Space (wheel by URL) |
