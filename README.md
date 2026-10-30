@@ -19,6 +19,8 @@ It is a scratchpad, not a product. Two Claude-powered agents, a **planner** and 
 
 **Try it:** <https://huggingface.co/spaces/andrewhorn/matrix-agents-demo>. No install needed. The agents run at <https://matrix-agent-planner.vercel.app> and <https://matrix-agent-critic.vercel.app>.
 
+**How it works at a glance:** [`docs/infographic.html`](docs/infographic.html), a one-page overview of the three agents, where each is deployed, the SDK calls, and how this differs from the Cat Matrix. Open it in a browser (GitHub shows HTML files as source).
+
 ## The picture
 
 ```
@@ -186,6 +188,7 @@ Tests use stubbed SDKs; no live calls.
 | `agents/*/role.py` | The agent's name, who it answers to, and its prompt |
 | `agents/*/pyproject.toml`, `uv.lock`, `vendor/` | Dependencies and the vendored wheel for that project |
 | `tests/` | Response rules, webhook handling, viewer logic |
+| `docs/infographic.html` | One-page visual overview |
 | `docs/superpowers/` | Design spec and plan |
 | `LICENSE` | MIT |
 
