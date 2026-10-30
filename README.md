@@ -15,7 +15,9 @@ short_description: Two Claude agents talking through the Matrix API
 
 A deliberately simple demo of the **Matrix API** (`https://api.matrix.kred`, docs at `/redoc`) and its Python SDK `matrix_kred`, showing that **Matrix can be the communication layer between agents**: agents hosted separately, built separately, talking through Matrix rather than through each other.
 
-It is a scratchpad, not a product. Two Claude-powered agents, a **planner** and a **critic**, hold a conversation on a Matrix node. A local Gradio viewer starts a run and shows the thread as it appears. A second tab shows a read-only view of the Cat Matrix node (the conversations behind <https://catmatrix.kred>), read with a few lines of SDK code.
+It is a scratchpad, not a product. Two Claude-powered agents, a **planner** and a **critic**, hold a conversation on a Matrix node. A Gradio viewer starts a run and shows the thread as it appears. A second tab shows a read-only view of the Cat Matrix node (the conversations behind <https://catmatrix.kred>), read with a few lines of SDK code.
+
+**Try it:** <https://huggingface.co/spaces/andrewhorn/matrix-agents-demo>. No install needed. The agents run at <https://matrix-agent-planner.vercel.app> and <https://matrix-agent-critic.vercel.app>.
 
 ## The picture
 
@@ -57,7 +59,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
-`requirements.txt` installs the vendored `matrix_kred` wheel from `vendor/` (the SDK is not on PyPI yet).
+`requirements.txt` installs the vendored `matrix_kred` wheel from `vendor/` (the SDK is not published yet, so the wheel ships with this repo).
 
 Create a `.env` file for the viewer (real environment variables take precedence):
 
@@ -122,11 +124,11 @@ Set all of them on both projects; the planner reads the critic's and host's IDs,
 
 ### Swapping the vendored wheel for the GitHub URL
 
-The wheel is vendored so the Vercel build works today. Once `matrix_kred` is published via GitHub, edit `[tool.uv.sources]` in each agent's `pyproject.toml` (for example `matrix-kred = { git = "https://github.com/<org>/matrixsdk" }`) (and regenerate its `uv.lock`), and change the wheel line in the root `requirements.txt` for the viewer.
+The wheel is vendored so the Vercel build works today. Once `matrix_kred` is published on GitHub, swap the wheel for the repo URL in three places: `[tool.uv.sources]` in each agent's `pyproject.toml` (for example `matrix-kred = { git = "https://github.com/<github-org>/<sdk-repo>" }`, then regenerate that folder's `uv.lock`), the wheel line in the root `requirements.txt`, and the `matrix-kred @ ...` line in `space/requirements.txt`. Replace `<github-org>/<sdk-repo>` with wherever the SDK ends up.
 
 ## Hosted viewer (Hugging Face Space)
 
-The viewer also runs as a public Space, so people can try it without installing anything. Only `main.py`, `vendor/`, this README and `space/requirements.txt` (uploaded as `requirements.txt`) go to the Space. The Space installs `matrix_kred` from the wheel in its own repo by URL, because Spaces install requirements before the rest of the repo is copied in.
+The viewer runs as a public Space at <https://huggingface.co/spaces/andrewhorn/matrix-agents-demo>, so people can try it without installing anything. To host your own copy, replace `<you>` below with your Hugging Face user or organisation. Only `main.py`, `vendor/`, this README and `space/requirements.txt` (uploaded as `requirements.txt`) go to the Space. The Space installs `matrix_kred` from the wheel in its own repo by URL, because Spaces install requirements before the rest of the repo is copied in. In your own copy, change the URL in `space/requirements.txt` from `andrewhorn/matrix-agents-demo` to `<you>/matrix-agents-demo`.
 
 ```bash
 hf repo create <you>/matrix-agents-demo --repo-type space --space-sdk gradio
@@ -185,3 +187,8 @@ Tests use stubbed SDKs; no live calls.
 | `agents/*/pyproject.toml`, `uv.lock`, `vendor/` | Dependencies and the vendored wheel for that project |
 | `tests/` | Response rules, webhook handling, viewer logic |
 | `docs/superpowers/` | Design spec and plan |
+| `LICENSE` | MIT |
+
+## License
+
+MIT. See [LICENSE](LICENSE). The bundled `matrix_kred` wheel is also MIT-licensed.
