@@ -14,6 +14,7 @@ Without --apply it only prints what it would do.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 
@@ -31,6 +32,12 @@ AGENTS = [
 ]
 
 
+def idempotency_key(action: str, **fields: str) -> str:
+    """Same request -> same key (safe retry); any changed field -> a new key."""
+    body = "&".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    return f"setup-demo:{action}:{hashlib.sha256(body.encode()).hexdigest()[:24]}"
+
+
 def record(env_file: Path, key: str, value: str) -> None:
     env_file.touch(exist_ok=True)
     set_key(str(env_file), key, value, quote_mode="never")
@@ -40,14 +47,18 @@ def create_node(client: MatrixClient, args, state: dict, env_file: Path) -> str:
     if state.get("MATRIX_DEMO_NODE_ID"):
         print(f"node: already recorded {state['MATRIX_DEMO_NODE_ID']}")
         return state["MATRIX_DEMO_NODE_ID"]
-    print(f"node: nodes.create(domain={args.domain!r}, name={args.node_name!r}, visibility='public')")
+    path = args.path or args.node_name
+    print(f"node: nodes.create(domain={args.domain!r}, path={path!r}, name={args.node_name!r}, visibility='public')")
     if not args.apply:
         return "<new node>"
     node = client.nodes.create(
         domain=args.domain,
+        path=path,
         name=args.node_name,
         visibility="public",
-        idempotency_key=f"setup-demo:{args.domain}:{args.node_name}:node",
+        idempotency_key=idempotency_key(
+            "node", domain=args.domain, path=path, name=args.node_name, visibility="public"
+        ),
     )
     record(env_file, "MATRIX_DEMO_NODE_ID", node.id)
     print(f"node: created {node.id} (path={node.path}, owner={node.owner})")
@@ -66,7 +77,7 @@ def register_agents(client: MatrixClient, args, state: dict, env_file: Path) -> 
         if not args.apply:
             ids[role] = f"<new {role}>"
             continue
-        agent = client.agents.create(name=name, address=address, idempotency_key=f"setup-demo:{address}")
+        agent = client.agents.create(name=name, address=address, idempotency_key=idempotency_key("agent", name=name, address=address))
         # The token is shown once: save it before doing anything else.
         record(env_file, token_key, agent.token)
         record(env_file, id_key, agent.id)
@@ -91,7 +102,9 @@ def fund_host(client: MatrixClient, args, host_id: str) -> None:
     if not args.apply:
         return
     client.allowances.set(
-        host_id, amount_decimal=args.budget, idempotency_key=f"setup-demo:{host_id}:allowance:{args.budget}"
+        host_id,
+        amount_decimal=args.budget,
+        idempotency_key=idempotency_key("allowance", child=host_id, amount=args.budget),
     )
     print(f"host: allowance now {client.allowances.get(host_id).model_dump(mode='json')}")
 
@@ -100,6 +113,8 @@ def main(argv: list[str] | None = None, env_file: Path = ENV_FILE) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--domain", required=True, help="a domain (channel) you own, to create the node under")
     parser.add_argument("--node-name", default="matrix-agents-demo")
+    # Without a path the API targets the domain's root node, which already exists (409).
+    parser.add_argument("--path", help="node path under the domain (default: the node name)")
     parser.add_argument("--address-prefix", default="matrix-agents-demo", help="agent addresses are <prefix>-host etc.")
     parser.add_argument("--budget", required=True, help="host allowance in XP; each run costs 1")
     parser.add_argument("--apply", action="store_true", help="make the calls (default: print the plan only)")
