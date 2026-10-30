@@ -33,6 +33,13 @@ class ViewerConfig:
     reply_cap: int
 
 
+REQUIRED_CONFIG = ("MATRIX_HOST_TOKEN", "MATRIX_PLANNER_ID", "MATRIX_CRITIC_ID", "MATRIX_DEMO_NODE_ID")
+
+
+def missing_config(env: Mapping[str, str] = os.environ) -> list[str]:
+    return [name for name in REQUIRED_CONFIG if not env.get(name)]
+
+
 def load_config(env: Mapping[str, str] = os.environ) -> ViewerConfig:
     return ViewerConfig(
         host_token=env["MATRIX_HOST_TOKEN"],
@@ -40,7 +47,7 @@ def load_config(env: Mapping[str, str] = os.environ) -> ViewerConfig:
         planner_id=env["MATRIX_PLANNER_ID"],
         critic_id=env["MATRIX_CRITIC_ID"],
         demo_node_id=env["MATRIX_DEMO_NODE_ID"],
-        cat_node_id=env["MATRIX_CAT_NODE_ID"],
+        cat_node_id=env.get("MATRIX_CAT_NODE_ID", ""),
         planner_token=env.get("MATRIX_PLANNER_TOKEN") or None,
         critic_token=env.get("MATRIX_CRITIC_TOKEN") or None,
         reply_cap=int(env.get("REPLY_CAP") or 4),
@@ -168,6 +175,8 @@ def start_run(
 
 
 def cat_threads(client: MatrixClient, cfg: ViewerConfig, log: list[dict]) -> list[tuple[str, str]]:
+    if not cfg.cat_node_id:
+        return []
     threads = list(client.threads.list(cfg.cat_node_id, limit=20))
     log_call(log, f"client.threads.list({cfg.cat_node_id!r}, limit=20)", threads)
     return [(t.title or (t.text or "")[:60], t.id) for t in threads]
@@ -231,6 +240,8 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
             choices = cat_threads(host(), cfg, log)
         except MatrixError as e:
             return gr.update(choices=[], value=None), f"Couldn't list threads: {e}", _log_json(log)
+        if not cfg.cat_node_id:
+            return gr.update(choices=[], value=None), "Set MATRIX_CAT_NODE_ID to browse Cat Matrix threads.", "[]"
         return gr.update(choices=choices, value=None), f"{len(choices)} recent threads.", _log_json(log)
 
     def show_cat(thread_id: str | None):
@@ -296,6 +307,17 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
     return demo
 
 
+def not_configured_ui(missing: list[str]) -> gr.Blocks:
+    with gr.Blocks(title="Matrix Agents Demo") as demo:
+        gr.Markdown(
+            "# Matrix agents demo\n"
+            "This viewer isn't configured yet. Set these environment variables (or Space "
+            "variables and secrets) and restart:\n\n" + "\n".join(f"- `{name}`" for name in missing)
+        )
+    return demo
+
+
 if __name__ == "__main__":
     load_dotenv()
-    build_ui(load_config()).launch()
+    missing = missing_config()
+    (not_configured_ui(missing) if missing else build_ui(load_config())).launch()

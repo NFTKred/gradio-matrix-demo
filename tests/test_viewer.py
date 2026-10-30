@@ -176,6 +176,33 @@ def test_load_config_reads_env_and_defaults():
     assert cfg.planner_token is None
 
 
+def test_missing_config_lists_required_names():
+    assert main.missing_config({"MATRIX_HOST_TOKEN": "t", "MATRIX_PLANNER_ID": ""}) == [
+        "MATRIX_PLANNER_ID",
+        "MATRIX_CRITIC_ID",
+        "MATRIX_DEMO_NODE_ID",
+    ]
+
+
+def test_cat_node_is_optional():
+    cfg = main.load_config(
+        {"MATRIX_HOST_TOKEN": "t", "MATRIX_PLANNER_ID": "p", "MATRIX_CRITIC_ID": "c", "MATRIX_DEMO_NODE_ID": "d"}
+    )
+    assert cfg.cat_node_id == ""
+    assert isinstance(main.build_ui(cfg), gr.Blocks)
+
+
+def test_cat_threads_without_node_makes_no_calls():
+    fake = FakeMatrix()
+    cfg = main.ViewerConfig(**{**CFG.__dict__, "cat_node_id": ""})
+    assert main.cat_threads(fake, cfg, []) == []
+    assert fake.calls == []
+
+
+def test_not_configured_page_builds():
+    assert isinstance(main.not_configured_ui(["MATRIX_HOST_TOKEN"]), gr.Blocks)
+
+
 def test_cat_view_is_read_only():
     fake = FakeMatrix()
     fake.returns["threads.list"] = [make_thread(id="thr_c")]
