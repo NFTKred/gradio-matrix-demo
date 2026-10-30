@@ -89,11 +89,29 @@ def _label(message, names: Mapping[str, str], fallback_names: bool) -> str:
     return "Someone"
 
 
-def to_chat(thread, replies, names: Mapping[str, str], fallback_names: bool = True) -> list[dict]:
-    chat = [{"role": "user", "content": thread.text or ""}]
+ICONS = {"Task": "📋", "Planner": "🧭", "Critic": "🔍"}
+
+# Bubble tints and spacing; rgba so it reads in light and dark themes.
+CHAT_CSS = """
+.speakers .message-row { margin-bottom: 14px !important; }
+.speakers .bot-row { background: rgba(59, 111, 216, 0.10) !important; border-left: 4px solid rgba(59, 111, 216, 0.7); }
+.speakers .user-row { background: rgba(224, 138, 30, 0.10) !important; border-right: 4px solid rgba(224, 138, 30, 0.7); }
+"""
+
+
+def _message(label: str, text: str | None) -> str:
+    return f"**{ICONS.get(label, '🐾')} {label}**\n\n{text or ''}"
+
+
+def to_chat(
+    thread, replies, names: Mapping[str, str], fallback_names: bool = True, right_side: tuple[str, ...] = ()
+) -> list[dict]:
+    """The opening post sits on the right; replies from `right_side` authors join it, so
+    two speakers alternate sides."""
+    chat = [{"role": "user", "content": _message("Task", thread.text)}]
     for reply in replies:
-        label = _label(reply, names, fallback_names)
-        chat.append({"role": "assistant", "content": f"**{label}:** {reply.text or ''}"})
+        role = "user" if any(_same_id(reply.user, r) for r in right_side) else "assistant"
+        chat.append({"role": role, "content": _message(_label(reply, names, fallback_names), reply.text)})
     return chat
 
 
@@ -148,7 +166,7 @@ def start_run(
     names = names_for(cfg)
     started = clock()
     count = -1
-    chat = to_chat(thread, [], names)
+    chat = to_chat(thread, [], names, right_side=(cfg.critic_id,))
     while True:
         try:
             current = host.threads.get(thread.id)
@@ -160,7 +178,7 @@ def start_run(
             count = len(replies)
             log_call(log, f"host.threads.get({thread.id!r})", current)
             log_call(log, f"host.threads.conversation({thread.id!r})", replies)
-        chat = to_chat(current, replies, names)
+        chat = to_chat(current, replies, names, right_side=(cfg.critic_id,))
         if count >= cfg.reply_cap:
             yield chat, _log_json(log), f"Done: {count} replies."
             return
@@ -270,7 +288,7 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
                     task = gr.Textbox(label="Task for the agents", placeholder=EXAMPLE_TASKS[0])
                     gr.Examples(examples=EXAMPLE_TASKS, inputs=task)
                     start = gr.Button("Start", variant="primary")
-                    chatbot = gr.Chatbot(height=500)
+                    chatbot = gr.Chatbot(height=500, group_consecutive_messages=False, elem_classes="speakers")
                     status = gr.Markdown("")
                 with gr.Column(scale=1):
                     gr.Markdown("### SDK calls (this viewer)")
@@ -297,7 +315,7 @@ def build_ui(cfg: ViewerConfig) -> gr.Blocks:
             with gr.Row():
                 with gr.Column(scale=2):
                     cat_picker = gr.Dropdown(label="Thread", choices=[])
-                    cat_chat = gr.Chatbot(height=500)
+                    cat_chat = gr.Chatbot(height=500, group_consecutive_messages=False, elem_classes="speakers")
                 with gr.Column(scale=1):
                     gr.Markdown("### SDK calls (this viewer)")
                     cat_log = gr.Code(language="json")
@@ -320,4 +338,4 @@ def not_configured_ui(missing: list[str]) -> gr.Blocks:
 if __name__ == "__main__":
     load_dotenv()
     missing = missing_config()
-    (not_configured_ui(missing) if missing else build_ui(load_config())).launch()
+    (not_configured_ui(missing) if missing else build_ui(load_config())).launch(css=CHAT_CSS)

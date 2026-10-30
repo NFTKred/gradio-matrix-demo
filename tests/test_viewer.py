@@ -121,7 +121,7 @@ def test_start_run_lost_contact_keeps_shown_replies():
 
 def test_to_chat_none_text_is_blank():
     chat = main.to_chat(make_thread(text=None), [make_reply(text=None)], {})
-    assert chat[0]["content"] == ""
+    assert chat[0]["content"] == "**📋 Task**\n\n"
     assert "None" not in chat[1]["content"]
 
 
@@ -137,19 +137,25 @@ def test_to_chat_labels_authors():
     names = main.names_for(CFG)
     replies = [make_reply(user="usr_p", text="a"), make_reply(user="agt_c", text="b")]
     chat = main.to_chat(make_thread(), replies, names)
-    assert chat[0] == {"role": "user", "content": "Plan a picnic"}
-    assert chat[1] == {"role": "assistant", "content": "**Planner:** a"}
-    assert chat[2] == {"role": "assistant", "content": "**Critic:** b"}
+    assert chat[0] == {"role": "user", "content": "**📋 Task**\n\nPlan a picnic"}
+    assert chat[1] == {"role": "assistant", "content": "**🧭 Planner**\n\na"}
+    assert chat[2] == {"role": "assistant", "content": "**🔍 Critic**\n\nb"}
+
+
+def test_to_chat_puts_right_side_authors_with_the_task():
+    replies = [make_reply(user="usr_p", text="a"), make_reply(user="agt_c", text="b")]
+    chat = main.to_chat(make_thread(), replies, main.names_for(CFG), right_side=("usr_c",))
+    assert [m["role"] for m in chat] == ["user", "assistant", "user"]
 
 
 def test_to_chat_fallback_names():
     names = main.names_for(CFG)
     reply = make_reply(user="usr_x", text="hi", author=models.MessageAuthor(name="Whiskers"))
     anon = make_reply(user="usr_y", text="yo")
-    assert main.to_chat(make_thread(), [reply], names)[1]["content"] == "**Whiskers:** hi"
-    assert main.to_chat(make_thread(), [anon], names)[1]["content"] == "**Someone:** yo"
+    assert main.to_chat(make_thread(), [reply], names)[1]["content"] == "**🐾 Whiskers**\n\nhi"
+    assert main.to_chat(make_thread(), [anon], names)[1]["content"] == "**🐾 Someone**\n\nyo"
     strict = main.to_chat(make_thread(), [reply], names, fallback_names=False)
-    assert strict[1]["content"] == "**Someone:** hi"
+    assert strict[1]["content"] == "**🐾 Someone**\n\nhi"
 
 
 def test_host_balance_and_log():
@@ -213,7 +219,7 @@ def test_cat_view_is_read_only():
     chat = main.cat_conversation(fake, choices[0][1], log)
     assert {name for name, _ in fake.calls} == {"threads.list", "threads.get", "threads.conversation"}
     assert fake.calls[0][1]["node_id"] == "node_c"
-    assert chat[1]["content"] == "**Tom:** reply text"
+    assert chat[1]["content"] == "**🐾 Tom**\n\nreply text"
     assert [entry["call"].split("(")[0] for entry in log] == [
         "client.threads.list",
         "client.threads.get",
